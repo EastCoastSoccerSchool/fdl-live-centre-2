@@ -8,7 +8,7 @@ import { initialFixtures, pitchOrder, timeOrder } from "../../lib/data";
 const supabase = getSupabase();
 
 // ── Change this PIN to whatever you want refs to use ──
-const REF_PIN = "1234";
+const REF_PIN = "2026";
 
 function ageColor(age) {
   if (age === "U7/8")  return "#f59e0b";
@@ -24,8 +24,9 @@ export default function RefsPage() {
   const [scores, setScores]     = useState(createScoreMap(initialFixtures));
   const [loading, setLoading]   = useState(true);
   const [saved, setSaved]       = useState({});
+  // confirmed[fixtureId] = { home: bool, away: bool }
+  const [confirmed, setConfirmed] = useState({});
 
-  // Load scores from Supabase on auth
   useEffect(() => {
     if (!authed || !supabase) return;
     let mounted = true;
@@ -67,7 +68,6 @@ export default function RefsPage() {
     return () => { mounted = false; if (supabase) supabase.removeChannel(channel); };
   }, [authed]);
 
-  // Fixtures for selected pitch, sorted by time
   const pitchFixtures = useMemo(() => {
     return initialFixtures
       .filter((f) => f.pitch === pitch)
@@ -92,8 +92,6 @@ export default function RefsPage() {
 
     if (!supabase) return;
     const row = newScores[id];
-
-    // Only save if both sides have a value
     if (row.home === "" || row.away === "") return;
 
     const { error } = await supabase.from("match_scores").upsert({
@@ -106,7 +104,19 @@ export default function RefsPage() {
     if (!error) {
       setSaved((prev) => ({ ...prev, [id]: true }));
       setTimeout(() => setSaved((prev) => ({ ...prev, [id]: false })), 2000);
+      // Reset confirmations if score changes
+      setConfirmed((prev) => ({ ...prev, [id]: { home: false, away: false } }));
     }
+  }
+
+  function toggleConfirm(id, side) {
+    setConfirmed((prev) => ({
+      ...prev,
+      [id]: {
+        ...((prev[id]) || { home: false, away: false }),
+        [side]: !((prev[id] || {})[side]),
+      },
+    }));
   }
 
   // ── PIN SCREEN ──
@@ -128,7 +138,6 @@ export default function RefsPage() {
           <p style={{ fontSize: "13px", color: "#6b7280", margin: "0 0 28px" }}>
             Pre-Season Cup 2026 · Score Entry
           </p>
-
           <form onSubmit={handlePin}>
             <input
               type="password"
@@ -222,16 +231,20 @@ export default function RefsPage() {
         )}
 
         {pitchFixtures.map((f) => {
-          const s = scores[f.id] || { home: "", away: "" };
-          const hasScore = scoreNumber(s.home) !== null && scoreNumber(s.away) !== null;
-          const isSaved  = saved[f.id];
+          const s          = scores[f.id] || { home: "", away: "" };
+          const hasScore   = scoreNumber(s.home) !== null && scoreNumber(s.away) !== null;
+          const isSaved    = saved[f.id];
+          const conf       = confirmed[f.id] || { home: false, away: false };
+          const bothConfirmed = conf.home && conf.away;
 
           return (
             <div key={f.id} style={{
               background: "#fff", borderRadius: "16px", padding: "16px",
               marginBottom: "12px", boxShadow: "0 1px 6px rgba(0,0,0,0.07)",
-              borderLeft: `4px solid ${ageColor(f.age)}`,
+              borderLeft: `4px solid ${bothConfirmed ? "#059669" : ageColor(f.age)}`,
+              transition: "border-color 0.3s",
             }}>
+
               {/* Top row */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -261,7 +274,7 @@ export default function RefsPage() {
               </div>
 
               {/* Score inputs */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", marginBottom: "16px" }}>
                 <input
                   type="number"
                   inputMode="numeric"
@@ -293,18 +306,116 @@ export default function RefsPage() {
                 />
               </div>
 
-              {/* Status */}
-              <div style={{ textAlign: "center", marginTop: "10px", height: "18px" }}>
+              {/* Save status */}
+              <div style={{ textAlign: "center", marginBottom: "14px", height: "16px" }}>
                 {isSaved && (
                   <span style={{ fontSize: "12px", fontWeight: 700, color: "#059669" }}>✓ Score saved</span>
                 )}
-                {!isSaved && hasScore && (
-                  <span style={{ fontSize: "11px", color: "#9ca3af" }}>Score recorded</span>
+                {!isSaved && hasScore && !bothConfirmed && (
+                  <span style={{ fontSize: "11px", color: "#9ca3af" }}>Score recorded — awaiting manager sign-off</span>
                 )}
                 {!isSaved && !hasScore && (
                   <span style={{ fontSize: "11px", color: "#d1d5db", fontStyle: "italic" }}>Enter both scores to save</span>
                 )}
               </div>
+
+              {/* Manager sign-off — only shown once score is entered */}
+              {hasScore && (
+                <div style={{
+                  background: "#f8faff",
+                  border: `1.5px solid ${bothConfirmed ? "#059669" : "#e5e7eb"}`,
+                  borderRadius: "12px",
+                  padding: "12px 14px",
+                  transition: "border-color 0.3s",
+                }}>
+                  <div style={{ fontSize: "11px", fontWeight: 800, color: "#374151", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>
+                    ✅ Manager Sign-Off
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+
+                    {/* Home manager */}
+                    <button
+                      onClick={() => toggleConfirm(f.id, "home")}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "12px",
+                        padding: "10px 14px", borderRadius: "10px", border: "2px solid",
+                        borderColor: conf.home ? "#059669" : "#d1d5db",
+                        background: conf.home ? "#f0fdf4" : "#fff",
+                        cursor: "pointer", textAlign: "left", width: "100%",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      <div style={{
+                        width: "28px", height: "28px", borderRadius: "8px", flexShrink: 0,
+                        background: conf.home ? "#059669" : "#f3f4f6",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        transition: "background 0.2s",
+                      }}>
+                        {conf.home
+                          ? <span style={{ color: "#fff", fontSize: "16px" }}>✓</span>
+                          : <span style={{ color: "#9ca3af", fontSize: "14px" }}>○</span>
+                        }
+                      </div>
+                      <div>
+                        <div style={{ fontSize: "12px", fontWeight: 700, color: conf.home ? "#059669" : "#374151" }}>
+                          {f.home} Manager
+                        </div>
+                        <div style={{ fontSize: "10px", color: "#9ca3af", marginTop: "1px" }}>
+                          {conf.home ? "Score confirmed ✓" : "Tap to confirm score"}
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Away manager */}
+                    <button
+                      onClick={() => toggleConfirm(f.id, "away")}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "12px",
+                        padding: "10px 14px", borderRadius: "10px", border: "2px solid",
+                        borderColor: conf.away ? "#059669" : "#d1d5db",
+                        background: conf.away ? "#f0fdf4" : "#fff",
+                        cursor: "pointer", textAlign: "left", width: "100%",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      <div style={{
+                        width: "28px", height: "28px", borderRadius: "8px", flexShrink: 0,
+                        background: conf.away ? "#059669" : "#f3f4f6",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        transition: "background 0.2s",
+                      }}>
+                        {conf.away
+                          ? <span style={{ color: "#fff", fontSize: "16px" }}>✓</span>
+                          : <span style={{ color: "#9ca3af", fontSize: "14px" }}>○</span>
+                        }
+                      </div>
+                      <div>
+                        <div style={{ fontSize: "12px", fontWeight: 700, color: conf.away ? "#059669" : "#374151" }}>
+                          {f.away} Manager
+                        </div>
+                        <div style={{ fontSize: "10px", color: "#9ca3af", marginTop: "1px" }}>
+                          {conf.away ? "Score confirmed ✓" : "Tap to confirm score"}
+                        </div>
+                      </div>
+                    </button>
+
+                  </div>
+
+                  {/* Both confirmed banner */}
+                  {bothConfirmed && (
+                    <div style={{
+                      marginTop: "10px", background: "#059669", borderRadius: "8px",
+                      padding: "8px 12px", textAlign: "center",
+                    }}>
+                      <span style={{ fontSize: "12px", fontWeight: 800, color: "#fff" }}>
+                        🎉 Both managers confirmed — score finalised!
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           );
         })}
