@@ -8,7 +8,7 @@ import { initialFixtures, pitchOrder, timeOrder } from "../../lib/data";
 const supabase = getSupabase();
 
 // ── Change this PIN to whatever you want refs to use ──
-const REF_PIN = "2026";
+const REF_PIN = "1234";
 
 function ageColor(age) {
   if (age === "U7/8")  return "#f59e0b";
